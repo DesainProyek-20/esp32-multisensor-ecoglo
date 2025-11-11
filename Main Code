@@ -1,0 +1,74 @@
+
+  // ---- ADC pH (opsional: set attenuasi) ----
+  // agar rentang ~3.3V full-scale
+  analogSetPinAttenuation(PH_SENSOR_PIN, ADC_11db);
+
+  Serial.println("---------------------------------------");
+}
+
+// =======================================================
+// LOOP
+// =======================================================
+void loop() {
+  // 1) CO2 (MH-Z19B)
+  int co2 = mhz19.getCO2();
+  int temp_mhz = mhz19.getTemperature();
+
+  // 2) pH (ambil 10 sampel, sort, buang outlier 2 teratas & 2 terbawah)
+  for (int i = 0; i < 10; i++) {
+    buffer_arr[i] = analogRead(PH_SENSOR_PIN);
+    delay(30);
+  }
+  for (int i = 0; i < 9; i++) {
+    for (int j = i + 1; j < 10; j++) {
+      if (buffer_arr[i] > buffer_arr[j]) {
+        tempSort = buffer_arr[i];
+        buffer_arr[i] = buffer_arr[j];
+        buffer_arr[j] = tempSort;
+      }
+    }
+  }
+  avgval = 0;
+  for (int i = 2; i < 8; i++) avgval += buffer_arr[i];
+
+  // NOTE: /6 mengasumsikan pembagi tegangan 1:6 pada input pH
+  float volt = (float)avgval * 3.3f / 4095.0f / 6.0f;
+  ph_act = -5.70f * volt + calibration_value;
+
+  // 3) Lux (BH1750)
+  float lux = lightMeter.readLightLevel();
+
+  // 4) Suhu (DS18B20)
+  ds18b20.requestTemperatures();
+  float temperatureC = ds18b20.getTempCByIndex(0);
+
+  // ---- Serial Monitor ----
+  Serial.println("\n=====================");
+  Serial.print("CO2: "); Serial.print(co2); Serial.print(" ppm");
+  Serial.print(" | T(MHZ19): "); Serial.print(temp_mhz); Serial.println(" C");
+
+  Serial.print("pH : "); Serial.print(ph_act, 2);
+  Serial.print(" | Volt: "); Serial.println(volt, 3);
+
+  Serial.print("Lux: "); Serial.println(lux);
+
+  Serial.print("Temp(DS18B20): ");
+  if (temperatureC == DEVICE_DISCONNECTED_C) Serial.println("N/A");
+  else { Serial.print(temperatureC); Serial.println(" C"); }
+  Serial.println("=====================\n");
+
+  // ---- OLED ----
+  if (display.width() > 0) { // OLED tersedia
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.print("CO2: "); display.print(co2); display.println(" ppm");
+    display.print("pH : "); display.println(ph_act, 2);
+    display.print("Lux: "); display.println(lux);
+    display.print("Tmp: ");
+    if (temperatureC == DEVICE_DISCONNECTED_C) display.println("--");
+    else { display.print(temperatureC); display.println(" C"); }
+    display.display();
+  }
+
+  delay(3000); // update tiap 3 detik
+}
